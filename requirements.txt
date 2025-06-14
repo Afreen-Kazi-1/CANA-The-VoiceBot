@@ -8,3 +8,7 @@ faiss-cpu
 numpy
 nltk
 pymupdf  
+pickle
+requests
+
+
