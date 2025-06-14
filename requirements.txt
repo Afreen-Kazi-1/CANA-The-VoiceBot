@@ -1,0 +1,10 @@
+transformers
+sentence-transformers
+pandas
+python-dotenv
+groq
+torch
+faiss-cpu
+numpy
+nltk
+pymupdf  

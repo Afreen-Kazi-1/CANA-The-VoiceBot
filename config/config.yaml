@@ -1,0 +1,3 @@
+#dummy for now
+asr_model: "dummy_asr"
+nlp_model: "transformer"
