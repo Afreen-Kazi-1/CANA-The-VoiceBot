@@ -37,7 +37,7 @@ def detect_script(text):
     else:
         return "Unknown"
 
-def generate_rag_response_from_text(query, tokenizer, model, index, content_chunks):
+def generate_rag_response_from_text(query, tokenizer, model, index, content_chunks): #
     query_inputs = tokenizer(query, return_tensors='pt', truncation=True, padding=True)
     with torch.no_grad():
         query_embedding = model(**query_inputs).last_hidden_state.mean(dim=1).detach().numpy()
@@ -85,7 +85,7 @@ def generate_rag_response_from_text(query, tokenizer, model, index, content_chun
         print(f"Error calling Groq API: {e}")
         return "Error interpreting command."
     
-def rag_model(input, language):
+def rag_model(input, language): # for middleman
     working_dir = Path("./rag_cache")
     labse_chunks_path = working_dir / "labse_content_chunks.pkl"
     labse_index_path = working_dir / "labse_faiss.index"
@@ -103,7 +103,7 @@ def rag_model(input, language):
     else:
         return "Language not supported or could not be determined."
 
-def run_rag_pipeline(pdf_dir, test_csv_path, output_csv_path):
+def run_rag_pipeline(pdf_dir, test_csv_path, output_csv_path): #for inference
     working_dir = Path("./rag_cache")
     # Precomputed chunk and embedding file paths
     labse_chunks_path = working_dir / "labse_content_chunks.pkl"
