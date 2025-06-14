@@ -4,11 +4,6 @@ from transformers import pipeline
 import pandas as pd
 import numpy as np
 
-# Suppress warnings
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ['HF_HUB_DISABLE_SYMLINKS_WARNING'] = '1'
-
-# Load HuggingFace pipelines
 zero_shot_classifier = pipeline("zero-shot-classification", model="MoritzLaurer/mDeBERTa-v3-base-mnli-xnli", device=0)
 sentiment_analyzer = pipeline("sentiment-analysis", model="cardiffnlp/xlm-roberta-base-sentiment-multilingual", device=0)
 
@@ -121,7 +116,7 @@ def nlp_pipeline(json_file, output_file):
                     "confidences": confidences,
                     "sentiment": "none",
                     "sentiment_score": 0.0,
-                    "response": "Maaf kijiye, samajh nahi aaya. Kya aap spasht kar sakte hain?"
+                    "response": "Sorry, I didn't understand. Could you clarify?"
                 }
             else:
                 rag_response = rag_generate_response(query)
@@ -136,7 +131,6 @@ def nlp_pipeline(json_file, output_file):
                 }
             results.append(result)
     
-    # Save results to output JSON file
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
@@ -146,7 +140,6 @@ def nlp_pipeline(json_file, output_file):
     
     return results
 
-# Main execution
 if __name__ == "__main__":
     json_file = "/content/transcript.json"
     output_file = "/content/output.json"
