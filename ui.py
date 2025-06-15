@@ -53,6 +53,7 @@ class TranscriptionApp:
         self.lang_code = "en-US"
         self.thread = None
         self.loop = None
+        self.update_user_data = None  # Callback function for storing user data
 
     def add_message(self, text, sender):
         self.chat_area.insert(tk.END, "\n\n" if self.chat_area.get("1.0", tk.END).strip() else "")
@@ -95,6 +96,10 @@ class TranscriptionApp:
         )
         
         if final_text.strip():  # Only process if there's actual text
+            # Call the callback to store user input and language
+            if self.update_user_data:
+                self.update_user_data(final_text, lang_code)
+            
             # Add user message
             self.root.after(0, lambda: self.add_message(final_text, "user"))
             
