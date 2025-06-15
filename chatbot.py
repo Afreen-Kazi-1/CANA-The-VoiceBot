@@ -1,23 +1,10 @@
-import nltk
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-
-# nltk.download('punkt_tab') # This was likely an error, 'punkt' is usually sufficient.
-# The line above was corrected from nltk.download('punkt_tab') to just ensure 'punkt' is available if needed, or use "llama3-groq-8b-8192-tool-use-preview".
-# However, sent_tokenize itself should handle this. If issues persist, uncommenting nltk.download('punkt') might be necessary.
-
-from nltk.tokenize import sent_tokenize
 import os
 import torch
 import faiss
 import numpy as np
 from transformers import AutoTokenizer, AutoModel
-import fitz 
 from groq import Groq
 from pathlib import Path
-import glob
 import pickle
 import pandas as pd
 from dotenv import load_dotenv
@@ -46,39 +33,6 @@ except Exception as e:
 faiss_index = None
 content_chunks = None
 rag_artifacts_loaded = False
-
-# --- PDF Processing and Chunking (kept for potential future use, not called in primary flow) ---
-def extract_text_from_pdf(pdf_file_path):
-    """Extract text from a single PDF file."""
-    doc = fitz.open(pdf_file_path)
-    all_text = ""
-    for page_num in range(len(doc)):
-        page = doc.load_page(page_num)
-        page_text = page.get_text("text")
-        all_text += f"--- Page {page_num + 1} of {os.path.basename(pdf_file_path)} ---\n{page_text}\n"
-    doc.close()
-    return all_text
-
-def extract_text_from_pdf_directory(pdf_directory):
-    """Extract text from all PDF files in a given directory."""
-    all_docs_text = ""
-    pdf_files = glob.glob(os.path.join(pdf_directory, '*.pdf'))
-    if not pdf_files:
-        print(f"No PDF files found in directory: {pdf_directory}")
-        return ""
-    
-    print(f"Found {len(pdf_files)} PDF files to process.")
-    for pdf_file in pdf_files:
-        print(f"Processing: {pdf_file}")
-        try:
-            all_docs_text += extract_text_from_pdf(pdf_file) + "\n\n"
-        except Exception as e:
-            print(f"Error processing {pdf_file}: {e}")
-    return all_docs_text
-
-def chunk_content_by_sentence(text):
-    """Chunk content into sentences."""
-    return sent_tokenize(text)
 
 # --- RAG Artifact Loading ---
 def load_rag_artifacts():
@@ -187,6 +141,7 @@ def generate_csv_with_answers(input_csv_path: str, output_csv_path: str):
 
     try:
         df = pd.read_csv(input_csv_path)
+        df.columns = [col.lower() for col in df.columns]
         if 'questions' not in df.columns:
             print(f"Error: 'questions' column not found in {input_csv_path}")
             return
