@@ -1,8 +1,10 @@
 import os
 from elevenlabs.client import ElevenLabs
+from dotenv import load_dotenv
 
 # Initialize ElevenLabs client
-elevenlabs = ElevenLabs(api_key="")  # Replace with your API key
+load_dotenv()
+elevenlabs = ElevenLabs(api_key=os.getenv("ELEVENLABS_API"))  # Load API key from .env
 
 # Dummy pipeline output (replace with actual pipeline output)
 dummy_pipeline_output = [
@@ -10,13 +12,13 @@ dummy_pipeline_output = [
 ]
 
 # Configuration
-OUTPUT_DIR = "/content/"
+# OUTPUT_DIR = "/content/"
 VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"  # Your specified voice
 MODEL_ID = "eleven_multilingual_v2"
 OUTPUT_FORMAT = "mp3_44100_128"
 
 # Ensure output directory exists
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def save_audio_from_text(text, output_file, index):
     """

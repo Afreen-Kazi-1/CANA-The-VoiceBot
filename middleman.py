@@ -36,7 +36,7 @@ def interpret_command_with_api(user_input):
 
 
 def middleman(user_input, context, data):
-    sentence = f"USER_INPUT: {user_input}; SYSTEM_OUTPUT: {data}; . The user is asking the USER_INPUT with some sentiments and intent. As a responder, Rephrase the SYSTEM_OUTPUT to be a perfect response to the user's question. The user should be satisfied, and you should always calm the user down. Keep it maximum 2 lines"
+    sentence = f"USER_INPUT: {user_input}; SYSTEM_OUTPUT: {data}; . The user is asking the USER_INPUT with some sentiments and intent. As a responder, Rephrase the SYSTEM_OUTPUT to be a perfect response to the user's question.. Keep it MAXIMUM 2 lines. as youre a chatbot, you and the user have been speaking in a flow. this is the context of the conversation so far: {context}"
 
     command = interpret_command_with_api(sentence)
     if command.startswith("Error"):

@@ -54,6 +54,8 @@ class TranscriptionApp:
         self.thread = None
         self.loop = None
         self.update_user_data = None  # Callback function for storing user data
+        self.get_system_response = None  # Callback to get processed response
+        self.play_audio_callback = None  # Callback to play TTS audio
 
     def add_message(self, text, sender):
         self.chat_area.insert(tk.END, "\n\n" if self.chat_area.get("1.0", tk.END).strip() else "")
@@ -61,10 +63,9 @@ class TranscriptionApp:
         self.chat_area.see(tk.END)  # Auto-scroll to bottom
         
     async def get_model_response(self, query):
-        # TODO: Replace this with actual model API call
-        # Example:
-        # response = await call_your_model_api(query)
-        # return response
+        # Use the system response if callback is available
+        if self.get_system_response:
+            return self.get_system_response()
         return "Hello world"
 
     def start_transcription(self, lang_code):
@@ -106,6 +107,10 @@ class TranscriptionApp:
             # Get and add AI response
             response = await self.get_model_response(final_text)
             self.root.after(0, lambda: self.add_message(response, "assistant"))
+            
+            # Play audio after UI update with a small delay
+            if self.play_audio_callback and response:
+                self.root.after(500, lambda: self.play_audio_callback(response))
         
         self.root.after(0, lambda: self.status_label.config(text="Ready"))
         self.root.after(0, lambda: self.hindi_button.config(state=tk.NORMAL))
