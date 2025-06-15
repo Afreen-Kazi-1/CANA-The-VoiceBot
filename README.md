@@ -27,6 +27,7 @@ Key Focus: Voice Input ➝ Automatic Speech Recognition ➝ Intent and Ambiguity
 - Low-Literacy Region Financial Onboarding
 
 ## Folder Structure
+```bash
 📦VoiceBot_HackstreetGirls_Submission
 ┣ 📂config                            # Configuration files for API keys and other constants
 ┃ ┗ 📜config.yaml                     # YAML config file for environment or settings
@@ -52,6 +53,7 @@ Key Focus: Voice Input ➝ Automatic Speech Recognition ➝ Intent and Ambiguity
 ┣ 📜response.mp3                      # Example output audio response
 ┣ 📜run_inference.py                 # Script to test RAG responses using test CSV
 ┗ 📜setup.py                          # Setup script for installation (optional)
+```
 
 ## Installations and Execution
 
@@ -125,13 +127,7 @@ This will start the voicebot and allow real-time speech interaction via the micr
 | **Models**                    | `Llama 3.3`, `mDeBERTa`, ``,                                  |
 
 ## Contributors
-*[Afreen Kazi] (https://github.com/Afreen-Kazi-1)
-*[Carol Chopde] (https://github.com/CarolChopde)
-*[Ghruank Kothare] (https://github.com/Ghruank)
-*[Niharika Hariharan] (https://github.com/niharikah005)
-
-
-
-
-
-
+- [Afreen Kazi](https://github.com/Afreen-Kazi-1)
+- [Carol Chopde](https://github.com/CarolChopde)
+- [Ghruank Kothare](https://github.com/Ghruank)
+- [Niharika Hariharan](https://github.com/niharikah005)
