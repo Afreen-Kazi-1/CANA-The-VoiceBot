@@ -1,7 +1,7 @@
 import tkinter as tk
 from modules.ui import TranscriptionApp
-from modules.rag_pipeline import get_bot_response
-from modules.middleman import middleman
+from modules.response_gen import get_bot_response
+from modules.nlp_pipeline import middleman
 from modules.tts import save_audio_from_text
 import os
 import pygame
