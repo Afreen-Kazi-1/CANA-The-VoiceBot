@@ -1,6 +1,6 @@
 import argparse
 # from modules.rag_pipeline import run_rag_pipeline
-from chatbot import generate_csv_with_answers
+from modules.rag_pipeline import generate_csv_with_answers
 def main():
     parser = argparse.ArgumentParser(description="Run inference on test questions using RAG pipeline.")
     parser.add_argument("--test_csv", type=str, required=True, help="Path to the CSV file with test questions.")
