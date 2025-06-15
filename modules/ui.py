@@ -4,7 +4,7 @@ import asyncio
 import threading
 from dotenv import load_dotenv
 import os
-from transcribe import stream_audio_to_transcribe
+from modules.asr_module import stream_audio_to_transcribe
 
 load_dotenv()
 os.environ["AWS_ACCESS_KEY_ID"] = os.getenv("AWS_ACCESS_KEY_ID")
