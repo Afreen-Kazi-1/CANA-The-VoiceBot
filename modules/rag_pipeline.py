@@ -1,153 +1,212 @@
 import os
-import faiss
-import pickle
-import numpy as np
-import pandas as pd
-from pathlib import Path
-from groq import Groq
-from dotenv import load_dotenv
-from transformers import AutoTokenizer, AutoModel
 import torch
-import re
-import requests
-import json
+import faiss
+import numpy as np
+from transformers import AutoTokenizer, AutoModel
+from groq import Groq
+from pathlib import Path
+import pickle
+import pandas as pd
+from dotenv import load_dotenv
 
-# Load env and Groq
+# --- Global Configuration & Model Initialization ---
 load_dotenv()
-GROQ_API_KEY = os.getenv("GROQ_AI_API_KEY")
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY not found in environment variables. Please set it in your .env file.")
 client = Groq(api_key=GROQ_API_KEY)
-llama_model = "llama-3.3-70b-versatile"
+llama_model = "llama-3.3-70b-versatile" 
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+# Initialize tokenizer and embedding model globally
+try:
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+    embedding_model = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+    EMBEDDING_DIM = embedding_model.config.hidden_size
+except Exception as e:
+    print(f"Error initializing HuggingFace models: {e}")
+    print("Please ensure you have an internet connection and the model name is correct.")
+    tokenizer = None
+    embedding_model = None
+    EMBEDDING_DIM = 768 # Default, but will cause issues if model not loaded
 
-# Tokenizers and Models (needed only for query embedding)
-labse_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/LaBSE")
-labse_model = AutoModel.from_pretrained("sentence-transformers/LaBSE")
+# Global variables for RAG artifacts
+faiss_index = None
+content_chunks = None
+rag_artifacts_loaded = False
 
-mpnet_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-mpnet-base-v2")
-mpnet_model = AutoModel.from_pretrained("sentence-transformers/all-mpnet-base-v2")
+# --- RAG Artifact Loading ---
+def load_rag_artifacts():
+    global faiss_index, content_chunks, rag_artifacts_loaded
+    current_script_dir = Path("./rag_cache")
+    faiss_index_path = current_script_dir / "rag_faiss.index"
+    content_chunks_path = current_script_dir / "rag_content_chunks.pkl"
 
-def detect_script(text):
-    devanagari_count = sum('\u0900' <= c <= '\u097F' for c in text)
-    latin_count = sum('a' <= c.lower() <= 'z' for c in text)
-    if devanagari_count > 0:
-        return "Hindi"
-    elif latin_count > 0:
-        return "Latin"
-    else:
-        return "Unknown"
+    print("Attempting to load RAG artifacts...")
+    try:
+        if faiss_index_path.exists():
+            faiss_index = faiss.read_index(str(faiss_index_path))
+            print(f"Successfully loaded FAISS index from {faiss_index_path} with {faiss_index.ntotal} vectors.")
+        else:
+            print(f"Error: FAISS index file not found at {faiss_index_path}")
+            faiss_index = None
 
-def generate_rag_response_from_text(query, tokenizer, model, index, content_chunks): #
-    query_inputs = tokenizer(query, return_tensors='pt', truncation=True, padding=True)
-    with torch.no_grad():
-        query_embedding = model(**query_inputs).last_hidden_state.mean(dim=1).detach().numpy()
+        if content_chunks_path.exists():
+            with open(content_chunks_path, 'rb') as f:
+                content_chunks = pickle.load(f)
+            print(f"Successfully loaded content chunks from {content_chunks_path} ({len(content_chunks)} chunks).")
+        else:
+            print(f"Error: Content chunks file not found at {content_chunks_path}")
+            content_chunks = None
+            
+        if faiss_index is not None and content_chunks is not None:
+            rag_artifacts_loaded = True
+            print("RAG artifacts loaded successfully.")
+        else:
+            rag_artifacts_loaded = False
+            print("Failed to load one or more RAG artifacts. RAG functions will not operate correctly.")
 
-    k = min(5, len(content_chunks))
-    if k == 0:
-        return "No content available to search."
+    except Exception as e:
+        print(f"An error occurred while loading RAG artifacts: {e}")
+        faiss_index = None
+        content_chunks = None
+        rag_artifacts_loaded = False
 
-    distances, indices = index.search(query_embedding, k)
-    relevant_contexts = [content_chunks[i] for i in indices[0] if i < len(content_chunks)]
-    combined_context = " ".join(relevant_contexts)
+# Load artifacts when the module is imported/run
+load_rag_artifacts()
 
-    if not combined_context.strip():
-        return "Could not find relevant context for your query."
-
-    headers = {
-    "Content-Type": "application/json",
-    "Authorization": f"Bearer {GROQ_API_KEY}"
-    }
-    data = {
-        "model": llama_model,
-        "messages": [{
-                        "role": "system",
-                        "content": (
-                            "You are a helpful assistant that answers questions based on the provided context "
-                            "from PDF documents. If the answer is not found in the context, say "
-                            "'So sorry, I could not find an answer to that.' Be concise with replies. "
-                            "Give suggestions where appropriate. Use conversational nuances and avoid overly technical jargon unless necessary."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Context from PDF documents:\n{combined_context}\n\nQuestion: {query}"
-                    }
-            ]
-    }
+# --- Core RAG Functions ---
+def get_bot_response(query: str) -> str:
+    """
+    Generates a RAG response for a given query using pre-loaded artifacts.
+    Uses global client, llama_model, tokenizer, embedding_model, faiss_index, content_chunks.
+    """
+    if not rag_artifacts_loaded or tokenizer is None or embedding_model is None or faiss_index is None or content_chunks is None:
+        return "Error: RAG components are not properly loaded. Cannot generate response."
+    if not query or not query.strip():
+        return "Error: Query cannot be empty."
 
     try:
-        response = requests.post(GROQ_API_URL, headers=headers, data=json.dumps(data))
-        response.raise_for_status()
-        result = response.json()
-        command = result["choices"][0]["message"]["content"].strip()
-        return command
+        query_inputs = tokenizer(query, return_tensors='pt', truncation=True, padding=True)
+        
+        with torch.no_grad():
+            query_embedding = embedding_model(**query_inputs).last_hidden_state.mean(dim=1).detach().numpy()
+        
+        k = min(5, len(content_chunks)) 
+        if k == 0:
+            return "No content available in loaded chunks to search."
+            
+        distances, indices = faiss_index.search(query_embedding, k)
+        
+        relevant_contexts = [content_chunks[i] for i in indices[0] if i < len(content_chunks)]
+        combined_context = " ".join(relevant_contexts)
+
+        if not combined_context.strip():
+            return "Could not find relevant context for your query in the loaded documents."
+
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You give a very natural human like responses. if the user is talking causally, you talk casually as well. if the user is talking in hinglish, you talk in hinglish too. you are not a bot, you are like a human, talk like a normal human would talk. You are a knowledgeable expert who answers questions based only on the provided content from PDF documents.
+Speak naturally and directly, as if you're the author of the documents.
+Do not mention "the documents", "context", or similar references.
+If the answer is not available, simply ask what the user wants again.
+understand the user's sentiments and respond accordingly.
+add punctuation to your responses. add exclamation marks, question marks, commas, and full stops where appropriate. 
+be more emphatetic when the user's response is negative or sad.
+Keep your answers concise, clear, and helpful."""
+                },
+                {
+                    "role": "user",
+                    "content": f"Context from PDF documents:\n{combined_context}\n\nQuestion: {query}"
+                }
+            ],
+            model=llama_model,
+        )
+        answer = chat_completion.choices[0].message.content
+        return answer
     except Exception as e:
-        print(f"Error calling Groq API: {e}")
-        return "Error interpreting command."
+        print(f"Error during RAG response generation for query '{query}': {e}")
+        return "Error generating response from LLM."
+
+def generate_csv_with_answers(input_csv_path: str, output_csv_path: str):
+    """
+    Reads questions from an input CSV, generates answers using get_bot_response,
+    and writes questions and answers to an output CSV.
+    Uses global RAG components.
+    """
+    if not rag_artifacts_loaded:
+        print("Error: RAG components are not loaded. Cannot process CSV.")
+        return
+
+    try:
+        df = pd.read_csv(input_csv_path)
+        df.columns = [col.lower() for col in df.columns]
+        if 'questions' not in df.columns:
+            print(f"Error: 'questions' column not found in {input_csv_path}")
+            return
+    except FileNotFoundError:
+        print(f"Error: Input CSV file not found at {input_csv_path}.")
+        return
+    except Exception as e:
+        print(f"Error reading CSV {input_csv_path}: {e}")
+        return
+
+    answers = []
+    total_questions = len(df)
+    print(f"Processing {total_questions} questions from {input_csv_path}...")
     
-def rag_model(input, language): # for middleman
-    working_dir = Path("./rag_cache")
-    labse_chunks_path = working_dir / "labse_content_chunks.pkl"
-    labse_index_path = working_dir / "labse_faiss.index"
+    for i, row in df.iterrows():
+        question = str(row['questions']) 
+        if not question.strip():
+            print(f"Skipping empty question at row {i+1}.")
+            answers.append("Skipped empty question.")
+            continue
 
-    mpnet_chunks_path = working_dir / "mpnet_content_chunks.pkl"
-    mpnet_index_path = working_dir / "mpnet_faiss.index"
-    if language == "Hindi":
-        return generate_rag_response_from_text(
-            input, labse_tokenizer, labse_model, labse_index_path, labse_chunks_path
-        )
-    elif language == "Latin":
-        return generate_rag_response_from_text(
-            input, mpnet_tokenizer, mpnet_model, mpnet_index_path, mpnet_chunks_path
-        )
-    else:
-        return "Language not supported or could not be determined."
+        print(f"Processing question {i+1}/{total_questions}: \"{question[:70]}...\"")
+        
+        answer = get_bot_response(question)
+        answers.append(answer)
+        print(f"  -> Answer generated: \"{str(answer)[:70]}...\"")
 
-def run_rag_pipeline(pdf_dir, test_csv_path, output_csv_path): #for inference
-    working_dir = Path("./rag_cache")
-    # Precomputed chunk and embedding file paths
-    labse_chunks_path = working_dir / "labse_content_chunks.pkl"
-    labse_index_path = working_dir / "labse_faiss.index"
+    df['answers'] = answers
 
-    mpnet_chunks_path = working_dir / "mpnet_content_chunks.pkl"
-    mpnet_index_path = working_dir / "mpnet_faiss.index"
+    try:
+        df.to_csv(output_csv_path, index=False, encoding='utf-8')
+        print(f"Successfully processed questions and saved results to {output_csv_path}")
+    except Exception as e:
+        print(f"Error writing CSV to {output_csv_path}: {e}")
 
-    # Load precomputed chunks and FAISS indices
-    if not all(p.exists() for p in [labse_chunks_path, labse_index_path, mpnet_chunks_path, mpnet_index_path]):
-        raise FileNotFoundError("Missing required precomputed files in ./rag_cache")
+# Example usage (optional, can be commented out or removed if this is purely a library)
+# if __name__ == "__main__":
+#     print("Chatbot module loaded. RAG artifacts status:", rag_artifacts_loaded)
+#     if rag_artifacts_loaded:
+#         # Test get_bot_response
+#         print("\n--- Testing single response ---")
+#         sample_query = "What is LenDenClub?"
+#         print(f"Query: {sample_query}")
+#         bot_answer = get_bot_response(sample_query)
+#         print(f"Bot Answer: {bot_answer}")
 
-    with open(labse_chunks_path, 'rb') as f:
-        labse_chunks = pickle.load(f)
-    with open(mpnet_chunks_path, 'rb') as f:
-        mpnet_chunks = pickle.load(f)
+#         # Test generate_csv_with_answers
+#         print("\n--- Testing CSV processing ---")
+#         # Create a dummy input CSV for testing if it doesn't exist
+#         test_input_csv = "test_questions.csv"
+#         if not os.path.exists(test_input_csv):
+#             try:
+#                 dummy_df = pd.DataFrame({'questions': ["What are P2P investments?", "Tell me about RBI guidelines."]})
+#                 dummy_df.to_csv(test_input_csv, index=False)
+#                 print(f"Created dummy input file: {test_input_csv}")
+#             except Exception as e:
+#                 print(f"Could not create dummy input file: {e}")
 
-    labse_index = faiss.read_index(str(labse_index_path))
-    mpnet_index = faiss.read_index(str(mpnet_index_path))
+#         if os.path.exists(test_input_csv):
+#             generate_csv_with_answers(test_input_csv, "test_questions_with_answers.csv")
+#         else:
+#             print(f"Skipping CSV processing test as '{test_input_csv}' was not found/created.")
+#     else:
+#         print("Cannot run examples because RAG artifacts were not loaded.")
+#         print("Please ensure 'rag_faiss.index' and 'rag_content_chunks.pkl' are in the same directory as the script.")
 
-    # Load input questions
-    df = pd.read_csv(test_csv_path)
-    normalized_cols = [col.strip().lower() for col in df.columns]
-    if "questions" not in normalized_cols:
-        raise ValueError("Test CSV must contain a 'Questions' column (case-insensitive).")
-    actual_col = df.columns[normalized_cols.index("questions")]
-
-    # Answer generation
-    responses = []
-    for question in df[actual_col]:
-        lang = detect_script(question)
-        if lang == "Hindi":
-            answer = generate_rag_response_from_text(
-                question, labse_tokenizer, labse_model, labse_index, labse_chunks
-            )
-        elif lang == "Latin":
-            answer = generate_rag_response_from_text(
-                question, mpnet_tokenizer, mpnet_model, mpnet_index, mpnet_chunks
-            )
-        else:
-            answer = "Language not supported or could not be determined."
-        responses.append(answer)
-
-    df["Responses"] = responses
-    Path(output_csv_path).parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output_csv_path, index=False)
-    print(f"Responses saved to: {output_csv_path}")
+# (The old main() function and its direct calls to process_csv_and_generate_answers have been removed)
+# (The old process_csv_and_generate_answers and generate_rag_response_from_text functions have been renamed and adapted)
