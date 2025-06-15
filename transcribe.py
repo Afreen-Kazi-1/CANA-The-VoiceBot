@@ -4,54 +4,46 @@ from amazon_transcribe.client import TranscribeStreamingClient
 from amazon_transcribe.handlers import TranscriptResultStreamHandler
 from amazon_transcribe.model import TranscriptEvent
 
-from dotenv import load_dotenv
-import os
-import boto3
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Initialize AWS clients using environment variables
-transcribe_client = boto3.client('transcribe')
-s3_client = boto3.client('s3')
-
-
 class MyEventHandler(TranscriptResultStreamHandler):
+    def __init__(self, stream, transcript_store, text_widget=None):
+        super().__init__(stream)
+        self.transcript_store = transcript_store
+        self.text_widget = text_widget  # Optional: used in GUI
+
     async def handle_transcript_event(self, transcript_event: TranscriptEvent):
         for result in transcript_event.transcript.results:
             if not result.is_partial:
-                print(result.alternatives[0].transcript)
+                text = result.alternatives[0].transcript
+                self.transcript_store["final"] += text + " "
+                if self.text_widget:
+                    # Update GUI text area from main thread
+                    self.text_widget.after(0, lambda: self.text_widget.insert("end", text + "\n"))
 
-
-async def stream_audio_to_transcribe():
+async def stream_audio_to_transcribe(stop_event: asyncio.Event, transcript_store, text_widget=None, lang_code="en-US"):
     client = TranscribeStreamingClient(region="us-west-2")
 
     stream = await client.start_stream_transcription(
-        language_code="hi-IN",             # Use "en-US" for English
+        language_code=lang_code,
         media_sample_rate_hz=16000,
         media_encoding="pcm",
     )
 
-    handler = MyEventHandler(stream.output_stream)
+    handler = MyEventHandler(stream.output_stream, transcript_store, text_widget)
 
-    # Setup microphone stream
     audio = pyaudio.PyAudio()
     mic_stream = audio.open(
         format=pyaudio.paInt16,
         channels=1,
         rate=16000,
         input=True,
-        frames_per_buffer=1024,
+        frames_per_buffer=512,  # Smaller buffer for faster response
     )
 
     async def mic_to_stream():
-        print("🎙️ Start speaking into your microphone...")
         try:
-            while True:
-                data = mic_stream.read(1024, exception_on_overflow=False)
+            while not stop_event.is_set():
+                data = mic_stream.read(512, exception_on_overflow=False)
                 await stream.input_stream.send_audio_event(audio_chunk=data)
-        except KeyboardInterrupt:
-            print("🛑 Stopping due to keyboard interrupt...")
         finally:
             await stream.input_stream.end_stream()
             mic_stream.stop_stream()
@@ -60,10 +52,5 @@ async def stream_audio_to_transcribe():
 
     await asyncio.gather(mic_to_stream(), handler.handle_events())
 
-
-# 👇 Graceful shutdown entry point
-if __name__ == "__main__":
-    try:
-        asyncio.run(stream_audio_to_transcribe())
-    except KeyboardInterrupt:
-        print("\n🛑 Stopped by user (Ctrl+C)")
+    # Return the final transcript and language code
+    return transcript_store.get("final", ""), lang_code
